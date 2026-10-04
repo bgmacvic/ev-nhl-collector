@@ -21,7 +21,7 @@ from urllib.error import HTTPError
 from zoneinfo import ZoneInfo
 import feature_engine
 
-BOOKS = ('fanduel', 'draftkings', 'bet365', 'proline_ca_on')
+BOOKS = ('fanduel', 'draftkings', 'proline_ca_on')\nMANUAL_BOOKS = ('bet365',)
 UTC = timezone.utc
 TEAMS = 'ANA BOS BUF CAR CBJ CGY CHI COL DAL DET EDM FLA LAK MIN MTL NJD NSH NYI NYR OTT PHI PIT SEA SJS STL TBL TOR UTA VAN VGK WPG WSH'.split()
 
@@ -161,20 +161,25 @@ class Collector:
         return results
 
     def collect_goalies(self):
-        # Official player landing pages contain career/season evidence. Their
-        # aggregation is NOT automatically treated as the frozen career contract.
-        seed=json.loads((Path(__file__).parent/'seed/opening_state.json').read_text())
-        results={}
+        # Discover current NHL goalies from official team rosters; no static seed
+        # is required. Landing pages provide the career-stat evidence used after
+        # starter confirmation.
+        ids=set(); results={}
+        for team in TEAMS:
+            try:
+                body,_=fetch(f'https://api-web.nhle.com/v1/roster/{team}/current')
+                obj=json.loads(body)
+                for p in obj.get('goalies',[]): ids.add(int(p['id']))
+            except Exception as e: results['roster_'+team]={'status':'BLOCKED','error':str(e)}
         def collect(gid):
             try:
                 body,meta=fetch(f'https://api-web.nhle.com/v1/player/{gid}/landing')
                 obj=json.loads(body)
                 if int(obj.get('playerId',-1))!=int(gid): raise ValueError('Player mismatch')
                 archive(self.root,f'goalies/{gid}',body,meta)
-                results[gid]={'status':'FETCHED_REQUIRES_CAREER_REPLAY'}
-            except Exception as e: results[gid]={'status':'BLOCKED','error':str(e)}
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            list(pool.map(collect,seed['goalies']))
+                results[str(gid)]={'status':'FETCHED_REQUIRES_STARTER_CONFIRMATION'}
+            except Exception as e: results[str(gid)]={'status':'BLOCKED','error':str(e)}
+        with ThreadPoolExecutor(max_workers=4) as pool: list(pool.map(collect,sorted(ids)))
         write_json(self.root/'goalie_refresh.json',results)
         return results
 
