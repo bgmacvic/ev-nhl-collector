@@ -1,0 +1,26 @@
+{
+  "version": "1.1",
+  "bet_type": "NHL two-way moneyline",
+  "min_american_odds": 100,
+  "min_ev": 0.2,
+  "stake_probability_thresholds": {
+    "1": 0.2,
+    "2": 0.25,
+    "4": 0.3,
+    "8": 0.35,
+    "16": 0.4,
+    "32": 0.45,
+    "64": 0.5,
+    "128": 0.55
+  },
+  "starting_stake": 1,
+  "loss_action": "double to next ladder level",
+  "win_action": "reset to 1",
+  "loss_at_128": "terminate progression and reset next qualifying opportunity to 1",
+  "skipped_games": "no progression effect",
+  "timing_minutes_before_puck_drop": 15,
+  "shootout_counts_as_win": true,
+  "both_sides_qualify": "higher calibrated EV only unless genuine cross-book arbitrage",
+  "arbitrage": "independent of EV-Martingale progression",
+  "parameter_optimization_during_prospective_test": false
+}
