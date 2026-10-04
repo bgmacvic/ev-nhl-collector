@@ -20,7 +20,7 @@ from urllib.parse import urlencode
 from urllib.error import HTTPError
 from zoneinfo import ZoneInfo
 
-BOOKS = ('fanduel', 'draftkings', 'proline_ca_on')
+BOOKS = ('fanduel', 'draftkings', 'bet365', 'proline_ca_on')
 UTC = timezone.utc
 TEAMS = 'ANA BOS BUF CAR CBJ CGY CHI COL DAL DET EDM FLA LAK MIN MTL NJD NSH NYI NYR OTT PHI PIT SEA SJS STL TBL TOR UTA VAN VGK WPG WSH'.split()
 
@@ -224,16 +224,31 @@ class Collector:
         while True:
             try:
                 previous=json.loads(marker.read_text()) if marker.exists() else {}
-                day=now().astimezone(ZoneInfo('America/Toronto')).date().isoformat()
-                if previous.get('day')!=day:
-                    season=int(os.environ.get('NHL_SEASON','2026'))
+                local_now=now().astimezone(ZoneInfo('America/Toronto'))
+                day=local_now.date().isoformat()
+                season=int(os.environ.get('NHL_SEASON','2026'))
+                # MoneyPuck updates nightly, but the exact publish time can vary.
+                # Refresh every four hours so an early-morning pre-update fetch
+                # cannot leave the live state stale for the entire betting day.
+                last_team=parse(previous['team_refreshed_at']) if previous.get('team_refreshed_at') else None
+                team_due=last_team is None or (now()-last_team).total_seconds() >= 4*3600
+                goalie_due=previous.get('goalie_day') != day
+                teams={'status':'NOT_DUE'}
+                goalies={}
+                if team_due:
                     teams=self.refresh_teams(season)
+                    previous['team_refreshed_at']=stamp(now())
+                    previous['team_data_status']=teams['status']
+                    previous['team_latest_game_date']=teams.get('latest_game_date')
+                if goalie_due:
                     goalies=self.collect_goalies()
-                    summary={'day':day,'team_data_status':teams['status'],
-                        'goalies_fetched':sum(v['status'].startswith('FETCHED') for v in goalies.values()),
-                        'status':'COLLECTION_ONLY'}
-                    write_json(marker,summary)
-                    print(json.dumps({'event':'daily_refresh','result':summary}),flush=True)
+                    previous['goalie_day']=day
+                    previous['goalies_fetched']=sum(v['status'].startswith('FETCHED') for v in goalies.values())
+                previous['day']=day
+                previous['status']='AUTO_REFRESH_ACTIVE'
+                write_json(marker,previous)
+                if team_due or goalie_due:
+                    print(json.dumps({'event':'automatic_refresh','result':previous}),flush=True)
                 for folder,days in [('schedule',7),('odds',60)]:
                     for file in (self.root/'raw'/folder).glob('*'):
                         if file.is_file() and time.time()-file.stat().st_mtime>days*86400: file.unlink()
