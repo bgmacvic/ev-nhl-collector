@@ -160,6 +160,29 @@ class Collector:
         write_json(self.root/'team_refresh.json',results)
         return results
 
+    def refresh_goalie_stats(self):
+        # MoneyPuck published game-by-game goalie file: same statistical source
+        # family used by the recovered Phase 2B career-SV feature.
+        url='https://moneypuck.com/moneypuck/playerData/careers/gameByGame/all_goalies.csv'
+        try:
+            with urlopen(Request(url,headers={'User-Agent':'EVResearchCollector/1.0'}),timeout=60) as response:
+                reader=csv.DictReader(io.TextIOWrapper(response,encoding='utf-8-sig'))
+                totals={}
+                for r in reader:
+                    if r.get('situation')!='all': continue
+                    try: pid=str(int(float(r['playerId']))); shots=float(r['ongoal']); goals=float(r['goals'])
+                    except (KeyError,ValueError,TypeError): continue
+                    x=totals.setdefault(pid,{'shots':0.0,'saves':0.0,'name':r.get('name')})
+                    x['shots']+=shots; x['saves']+=shots-goals
+            for pid,x in totals.items():
+                sv=x['saves']/x['shots'] if x['shots'] else 0.91239041
+                x['career_sv']=sv
+                x['career_sv_shrunk']=(sv*x['shots']+0.91239041*600)/(x['shots']+600)
+            write_json(self.root/'goalie_state.json',{'generated_at':stamp(now()),'source':url,'goalies':totals})
+            return {'status':'FETCHED','goalies':len(totals)}
+        except HTTPError as e:return {'status':'BLOCKED','error':f'HTTP_{e.code}'}
+        except Exception as e:return {'status':'BLOCKED','error':type(e).__name__}
+
     def collect_goalies(self):
         # Discover current NHL goalies from official team rosters; no static seed
         # is required. Landing pages provide the career-stat evidence used after
@@ -290,7 +313,7 @@ class Collector:
         self.settle_completed()
 
     def run(self):
-        print(json.dumps({'event':'worker_started','mode':'READ_ONLY_COLLECTION','books':BOOKS}),flush=True)
+        print(json.dumps({'event':'worker_started','mode':'LIVE_DECISION_NO_BET_PLACEMENT','books':BOOKS}),flush=True)
         threading.Thread(target=self.maintenance, daemon=True).start()
         while True:
             try:
@@ -325,9 +348,9 @@ class Collector:
                     previous['team_data_status']=teams['status']
                     previous['team_latest_game_date']=teams.get('latest_game_date')
                 if goalie_due:
-                    goalies=self.collect_goalies()
+                    goalie_stats=self.refresh_goalie_stats()\n                    goalies=self.collect_goalies()
                     previous['goalie_day']=day
-                    previous['goalies_fetched']=sum(v['status'].startswith('FETCHED') for v in goalies.values())
+                    previous['goalies_fetched']=sum(v['status'].startswith('FETCHED') for v in goalies.values())\n                    previous['goalie_stats_status']=goalie_stats.get('status')
                 previous['day']=day
                 previous['status']='AUTO_REFRESH_ACTIVE'
                 write_json(marker,previous)
