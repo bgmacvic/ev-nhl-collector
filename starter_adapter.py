@@ -27,35 +27,9 @@ def load_starters(root):
     return out
 
 def goalie_shrunk(root,gid):
-    p=Path(root)/"raw"/"goalies"/(str(gid)+".gz")
+    p=Path(root)/"goalie_state.json"
     if not p.exists(): return None
-    obj=json.loads(gzip.decompress(p.read_bytes()))
-    c=(obj.get("careerTotals") or {}).get("regularSeason") or {}
-    sv=c.get("savePctg",c.get("savePercentage")); shots=c.get("shotsAgainst")
-    if sv is None or shots is None:return None
-    sv=float(sv); shots=float(shots)
-    return (sv*shots+PRIOR_SV*PRIOR_SHOTS)/(shots+PRIOR_SHOTS)
+    state=json.loads(p.read_text()).get("goalies",{})
+    x=state.get(str(gid))
+    return float(x["career_sv_shrunk"]) if x and x.get("career_sv_shrunk") is not None else None
 
-def patch_feature_csv(root,path):
-    path=Path(path)
-    if not path.exists():return {"status":"NO_FEATURE_TABLE"}
-    starters=load_starters(root)
-    with path.open(newline="") as f: rows=list(csv.DictReader(f))
-    patched=0
-    for r in rows:
-        s=starters.get(str(r["gameId"]))
-        blockers=[x for x in r.get("blockers","").split(";") if x]
-        blockers=[x for x in blockers if x!="CONFIRMED_STARTER_GOALIE_FEATURE_MISSING"]
-        if s:
-            h=goalie_shrunk(root,s["home_goalie_id"]); a=goalie_shrunk(root,s["away_goalie_id"])
-            if h is not None and a is not None:
-                r["goalie_career_sv_shrunk_diff"]=str(h-a); patched+=1
-            else:blockers.append("GOALIE_CAREER_STATS_MISSING")
-        else:blockers.append("CONFIRMED_STARTER_GOALIE_FEATURE_MISSING")
-        r["blockers"]=";".join(dict.fromkeys(blockers))
-        r["ready_for_v1c"]=str(not bool(blockers))
-    tmp=path.with_suffix(path.suffix+".tmp")
-    with tmp.open("w",newline="") as f:
-        w=csv.DictWriter(f,fieldnames=rows[0].keys());w.writeheader();w.writerows(rows)
-    tmp.replace(path)
-    return {"status":"PATCHED","confirmed_games":len(starters),"patched_rows":patched}
