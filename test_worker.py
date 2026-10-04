@@ -26,7 +26,7 @@ class WorkerTests(unittest.TestCase):
             self.assertEqual(w.Collector(Path(d)).refresh_teams(2026)['status'],'BLOCKED')
 
     def test_book_scope(self):
-        self.assertEqual(w.BOOKS,('fanduel','draftkings','proline_ca_on'))
+        self.assertEqual(w.BOOKS,('fanduel','draftkings','bet365','proline_ca_on'))
 
     def test_schedule_excludes_preseason(self):
         item={'id':123,'gameType':1,'homeTeam':{'abbrev':'VAN'},'awayTeam':{'abbrev':'CGY'},'startTimeUTC':GAME['start']}
