@@ -19,9 +19,12 @@ from urllib.request import Request, urlopen
 from urllib.parse import urlencode
 from urllib.error import HTTPError
 from zoneinfo import ZoneInfo
-import feature_engine\nimport starter_adapter\nimport model_engine
+import feature_engine
+import starter_adapter
+import model_engine
 
-BOOKS = ('fanduel', 'draftkings', 'proline_ca_on')\nMANUAL_BOOKS = ('bet365',)
+BOOKS = ('fanduel', 'draftkings', 'proline_ca_on')
+MANUAL_BOOKS = ('bet365',)
 UTC = timezone.utc
 TEAMS = 'ANA BOS BUF CAR CBJ CGY CHI COL DAL DET EDM FLA LAK MIN MTL NJD NSH NYI NYR OTT PHI PIT SEA SJS STL TBL TOR UTA VAN VGK WPG WSH'.split()
 
@@ -348,9 +351,11 @@ class Collector:
                     previous['team_data_status']=teams['status']
                     previous['team_latest_game_date']=teams.get('latest_game_date')
                 if goalie_due:
-                    goalie_stats=self.refresh_goalie_stats()\n                    goalies=self.collect_goalies()
+                    goalie_stats=self.refresh_goalie_stats()
+                    goalies=self.collect_goalies()
                     previous['goalie_day']=day
-                    previous['goalies_fetched']=sum(v['status'].startswith('FETCHED') for v in goalies.values())\n                    previous['goalie_stats_status']=goalie_stats.get('status')
+                    previous['goalies_fetched']=sum(v['status'].startswith('FETCHED') for v in goalies.values())
+                    previous['goalie_stats_status']=goalie_stats.get('status')
                 previous['day']=day
                 previous['status']='AUTO_REFRESH_ACTIVE'
                 write_json(marker,previous)
