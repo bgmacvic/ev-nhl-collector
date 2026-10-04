@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 import feature_engine
 import starter_adapter
 import model_engine
+import espn_starters
 
 BOOKS = ('fanduel', 'draftkings', 'proline_ca_on')
 MANUAL_BOOKS = ('bet365',)
@@ -209,6 +210,22 @@ class Collector:
         write_json(self.root/'goalie_refresh.json',results)
         return results
 
+    def refresh_starters(self, games):
+        # Refresh immediately before each T-15 evaluation. ESPN is identification
+        # evidence only; MoneyPuck remains the frozen goalie-stat source.
+        try:
+            local=now().astimezone(ZoneInfo('America/Toronto'))
+            candidates=espn_starters.fetch_date(local.date())
+            payload=espn_starters.match_to_nhl(candidates,games)
+            write_json(self.root/'confirmed_starters.json',payload)
+            write_json(self.root/'starter_refresh.json',{'observed_at':stamp(now()),
+                'status':'FETCHED','matched_games':len(payload['games']),'source':'ESPN'})
+            return payload
+        except Exception as e:
+            write_json(self.root/'starter_refresh.json',{'observed_at':stamp(now()),
+                'status':'BLOCKED','error':type(e).__name__})
+            return {'games':[]}
+
     def capture(self, games):
         key=os.environ.get('ODDS_API_KEY','')
         day=now().date().isoformat()
@@ -223,6 +240,7 @@ class Collector:
         events=json.loads(body)
         if not isinstance(events,list): raise ValueError('Unexpected odds response')
         archive(self.root,'odds/'+stamp(now()).replace(':','-'),body,meta)
+        self.refresh_starters(games)
         season=int(os.environ.get('NHL_SEASON','2026'))
         feature_path=self.root/'features'/f'nhl_v1c_live_features_{season}_{season+1}.csv'
         starter_status=starter_adapter.patch_feature_csv(self.root,feature_path)
