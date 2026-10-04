@@ -6,7 +6,7 @@ records explicitly marked confirmed are accepted; projected/probable is blocked.
 """
 import csv,gzip,json,os
 from pathlib import Path
-from urllib.request import Request,urlopen
+from urllib.request import Request,urlopen\nfrom datetime import datetime,timezone
 PRIOR_SV=0.91239041; PRIOR_SHOTS=600.0
 
 def load_starters(root):
@@ -28,7 +28,14 @@ def load_starters(root):
         if x.get("uncertain") is True or x.get("disputed") is True: continue
         if not x.get("home_goalie_id") or not x.get("away_goalie_id"):continue
         # Require provenance so stale/anonymous projections cannot silently pass.
-        if not x.get("observed_at") and not x.get("confirmed_at"): continue
+        observed=x.get("observed_at") or x.get("confirmed_at")
+        if not observed: continue
+        try:
+            t=datetime.fromisoformat(str(observed).replace("Z","+00:00"))
+            if t.tzinfo is None: continue
+            age=(datetime.now(timezone.utc)-t.astimezone(timezone.utc)).total_seconds()
+            if age < -300 or age > 6*3600: continue
+        except (ValueError,TypeError): continue
         if not x.get("source"): continue
         out[str(x["game_id"])]=x
     return out
