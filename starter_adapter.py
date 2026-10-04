@@ -21,8 +21,15 @@ def load_starters(root):
     if not source:return {}
     out={}
     for x in source.get("games",[]):
-        if x.get("status")!="confirmed":continue
+        # V1.1 T-15 operational contract: confirmed OR current high-confidence
+        # probable/projected starters are admissible. Uncertain/disputed is not.
+        status=str(x.get("status","")).lower()
+        if status not in ("confirmed","probable","projected"): continue
+        if x.get("uncertain") is True or x.get("disputed") is True: continue
         if not x.get("home_goalie_id") or not x.get("away_goalie_id"):continue
+        # Require provenance so stale/anonymous projections cannot silently pass.
+        if not x.get("observed_at") and not x.get("confirmed_at"): continue
+        if not x.get("source"): continue
         out[str(x["game_id"])]=x
     return out
 
