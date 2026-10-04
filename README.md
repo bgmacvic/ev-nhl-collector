@@ -21,12 +21,10 @@ without inventing an unavailable data source:
 
 ### Confirmed starter contract
 
-The one external dependency that cannot be truthfully manufactured is a
-timestamped T−15 starting-goalie projection/confirmation feed. The NHL public API supplies roster,
+The T−15 starter identification path now uses ESPN's public pregame probable-starter scoreboard. It refreshes immediately before evaluation and is used only to identify the goalie; MoneyPuck remains the statistical source for the frozen goalie feature. Missing/ambiguous ESPN starter evidence fails closed. The NHL public API supplies roster,
 game and goalie-stat data but is not treated here as a confirmed-starter feed.
 
-Set STARTER_FEED_URL to a JSON endpoint you are authorized to use, or write
-/var/data/confirmed_starters.json. Schema:
+The worker automatically writes /var/data/confirmed_starters.json from the ESPN pregame feed. STARTER_FEED_URL remains available as an authorized override/fallback integration. Schema:
 
     {"games":[{"game_id":"2026020001","status":"confirmed",
       "home_goalie_id":8470001,"away_goalie_id":8470002,
