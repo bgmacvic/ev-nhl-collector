@@ -1,3 +1,49 @@
+# EV Martingale v1.1 — integrated live repository
+
+## Current production architecture (October 5, 2026)
+
+This repository now contains the complete automated path that can be implemented
+without inventing an unavailable data source:
+
+- NHL schedule and final-result ingestion.
+- MoneyPuck published team game-by-game refresh.
+- Exact recovered 11 V1c expanding team features (2015-16 onward).
+- Frozen prospective Elo seed recovered from 2025-26 V1c plus current-season K=20 updates.
+- Rest and back-to-back features.
+- MoneyPuck game-by-game goalie career state and frozen 600-shot shrinkage.
+- Confirmed-starter adapter that fails closed on projected/unconfirmed goalies.
+- Frozen V1c logistic equation and frozen prospective Platt calibration.
+- T-15 FanDuel, DraftKings and Ontario PROLINE collection through The Odds API.
+- +100, +20% EV and stake-specific probability ladder filters.
+- Higher-EV selection when both sides qualify; cross-book arbitrage detection.
+- Persistent progression state and postgame two-way-moneyline settlement.
+- No automatic bet placement.
+
+### Confirmed starter contract
+
+The one external dependency that cannot be truthfully manufactured is a
+timestamped confirmed-starting-goalie feed. The NHL public API supplies roster,
+game and goalie-stat data but is not treated here as a confirmed-starter feed.
+
+Set STARTER_FEED_URL to a JSON endpoint you are authorized to use, or write
+/var/data/confirmed_starters.json. Schema:
+
+    {"games":[{"game_id":"2026020001","status":"confirmed",
+      "home_goalie_id":8470001,"away_goalie_id":8470002,
+      "confirmed_at":"2026-10-05T22:30:00Z","source":"provider"}]}
+
+Only status=confirmed is accepted. Missing confirmation blocks V1c evaluation.
+
+### Sportsbook coverage
+
+The Odds API's published Canadian bookmaker list currently includes Ontario
+PROLINE but not bet365 Canada. Therefore bet365 remains an explicit manual/
+separate-source comparison and is never falsely represented as an API quote.
+FanDuel and DraftKings remain requested directly by bookmaker key alongside
+PROLINE. A missing book is recorded rather than substituted.
+
+---
+
 # EV NHL hosted collection setup
 
 Prepared October 4, 2026 UTC (October 3 in Toronto).
