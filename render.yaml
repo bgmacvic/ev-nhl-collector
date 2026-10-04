@@ -1,0 +1,22 @@
+services:
+  - type: worker
+    name: ev-nhl-collector
+    runtime: python
+    plan: starter
+    buildCommand: python -m unittest -v
+    startCommand: python -u worker.py run
+    disk:
+      name: ev-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: DATA_DIR
+        value: /var/data
+      - key: NHL_SEASON
+        value: '2026'
+      - key: MAX_ODDS_CALLS_PER_DAY
+        value: '20'
+      - key: ODDS_API_KEY
+        sync: false
