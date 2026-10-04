@@ -5,7 +5,7 @@ home_ice/rest/B2B inputs. It deliberately leaves Elo and confirmed-starting-
 goalie inputs blocked until their frozen live states are supplied; it never
 fabricates those values.
 """
-import csv, io, json, math
+import csv, io, json, math\nfrom pathlib import Path
 from collections import defaultdict
 from datetime import datetime
 
@@ -87,7 +87,8 @@ def live_rows(rows, games, elo=None, goalie=None):
     return out
 
 def from_csv_bytes(body,games,elo=None,goalie=None):
-    rows=csv.DictReader(io.StringIO(body.decode("utf-8-sig")))
+    rows=list(csv.DictReader(io.StringIO(body.decode("utf-8-sig"))))
+    if elo is None: elo=elo_from_rows(rows)
     return live_rows(rows,games,elo,goalie)
 
 def write_csv(path, rows):
@@ -97,3 +98,30 @@ def write_csv(path, rows):
     with temp.open("w",newline="") as f:
         w=csv.DictWriter(f,fieldnames=fields,extrasaction="ignore");w.writeheader();w.writerows(rows)
     temp.replace(path)
+
+
+def elo_from_rows(rows, seed_path=None, season=2026):
+    """Build prospective Elo from frozen end-2025 state + completed current games."""
+    if seed_path is None: seed_path=Path(__file__).parent/"seed"/"elo_post_2025.json"
+    seed=json.loads(Path(seed_path).read_text())
+    keep=float(seed["offseason_retention"]); base=float(seed["baseline"])
+    ratings={t:base+keep*(float(v)-base) for t,v in seed["ratings_post_2025"].items()}
+    games={}
+    for r in rows:
+        try:
+            if int(r["season"])!=season or str(r.get("playoffGame"))!="0" or r.get("situation")!="all": continue
+        except (KeyError,ValueError): continue
+        gid=str(r["gameId"]); games.setdefault(gid,[]).append(r)
+    def key(item):
+        rs=item[1]; return (parse_day(rs[0].get("gameDate",rs[0].get("date"))),int(item[0]))
+    for gid,rs in sorted(games.items(),key=key):
+        home=next((r for r in rs if r.get("home_or_away")=="HOME"),None)
+        away=next((r for r in rs if r.get("home_or_away")=="AWAY"),None)
+        if not home or not away: continue
+        h,a=home["team"],away["team"]
+        if h not in ratings or a not in ratings: continue
+        hg,ag=num(home,"goalsFor"),num(away,"goalsFor")
+        if hg is None or ag is None or hg==ag: continue
+        diff=ratings[h]-ratings[a]; exp=1/(1+10**(-diff/400)); y=1.0 if hg>ag else 0.0
+        delta=20*(y-exp); ratings[h]+=delta; ratings[a]-=delta
+    return ratings
