@@ -19,7 +19,7 @@ from urllib.request import Request, urlopen
 from urllib.parse import urlencode
 from urllib.error import HTTPError
 from zoneinfo import ZoneInfo
-import feature_engine
+import feature_engine\nimport starter_adapter\nimport model_engine
 
 BOOKS = ('fanduel', 'draftkings', 'proline_ca_on')\nMANUAL_BOOKS = ('bet365',)
 UTC = timezone.utc
@@ -197,9 +197,39 @@ class Collector:
         events=json.loads(body)
         if not isinstance(events,list): raise ValueError('Unexpected odds response')
         archive(self.root,'odds/'+stamp(now()).replace(':','-'),body,meta)
+        season=int(os.environ.get('NHL_SEASON','2026'))
+        feature_path=self.root/'features'/f'nhl_v1c_live_features_{season}_{season+1}.csv'
+        starter_status=starter_adapter.patch_feature_csv(self.root,feature_path)
+        feature_rows={}
+        if feature_path.exists():
+            with feature_path.open(newline='') as f:
+                feature_rows={str(r['gameId']):r for r in csv.DictReader(f)}
+        names=json.loads((Path(__file__).parent/'team_names.json').read_text())
         for g in games:
-            audit=audit_market(events,g,meta)
-            write_json(self.root/'evaluations'/(g['id']+'.json'),{'game':g,'status':'DRY_RUN_BLOCKED','audit':audit})
+            audit=audit_market(events,g,meta); row=feature_rows.get(str(g['id']))
+            result={'game':g,'audit':audit,'starter_status':starter_status,'status':'BLOCKED'}
+            if row and str(row.get('ready_for_v1c','')).lower()=='true':
+                matches=[e for e in events if e.get('home_team')==names.get(g['home'])
+                    and e.get('away_team')==names.get(g['away']) and parse(e['commence_time'])==parse(g['start'])]
+                best={'home':None,'away':None}; best_book={'home':None,'away':None}
+                if len(matches)==1:
+                    for b in matches[0].get('bookmakers',[]):
+                        if b.get('key') not in BOOKS: continue
+                        for m in b.get('markets',[]):
+                            if m.get('key')!='h2h': continue
+                            for o in m.get('outcomes',[]):
+                                side='home' if o.get('name')==names.get(g['home']) else ('away' if o.get('name')==names.get(g['away']) else None)
+                                if side and (best[side] is None or float(o['price'])>float(best[side])):
+                                    best[side]=o['price'];best_book[side]=b.get('key')
+                stake=int(self.state.get('progression_stake',1))
+                decision=model_engine.evaluate(row,best['home'],best['away'],stake)
+                for c in decision['candidates']: c['bookmaker']=best_book[c['side']]
+                result.update({'status':'EVALUATED','stake':stake,'decision':decision,
+                    'manual_price_required_for':['bet365']})
+            elif row:
+                result['feature_blockers']=row.get('blockers')
+            else: result['feature_blockers']='FEATURE_ROW_MISSING'
+            write_json(self.root/'evaluations'/(g['id']+'.json'),result)
         return meta
 
     def tick(self):
