@@ -11,7 +11,7 @@ without inventing an unavailable data source:
 - Frozen prospective Elo seed recovered from 2025-26 V1c plus current-season K=20 updates.
 - Rest and back-to-back features.
 - MoneyPuck game-by-game goalie career state and frozen 600-shot shrinkage.
-- Confirmed-starter adapter that fails closed on projected/unconfirmed goalies.
+- T−15 starter adapter accepting auditable confirmed/probable/projected starters while failing closed on uncertain or disputed goalies.
 - Frozen V1c logistic equation and frozen prospective Platt calibration.
 - T-15 FanDuel, DraftKings and Ontario PROLINE collection through The Odds API.
 - +100, +20% EV and stake-specific probability ladder filters.
@@ -22,7 +22,7 @@ without inventing an unavailable data source:
 ### Confirmed starter contract
 
 The one external dependency that cannot be truthfully manufactured is a
-timestamped confirmed-starting-goalie feed. The NHL public API supplies roster,
+timestamped T−15 starting-goalie projection/confirmation feed. The NHL public API supplies roster,
 game and goalie-stat data but is not treated here as a confirmed-starter feed.
 
 Set STARTER_FEED_URL to a JSON endpoint you are authorized to use, or write
@@ -32,7 +32,7 @@ Set STARTER_FEED_URL to a JSON endpoint you are authorized to use, or write
       "home_goalie_id":8470001,"away_goalie_id":8470002,
       "confirmed_at":"2026-10-05T22:30:00Z","source":"provider"}]}
 
-Only status=confirmed is accepted. Missing confirmation blocks V1c evaluation.
+At T−15, status=confirmed, probable, or projected is accepted when the record has a source and observation timestamp and is not marked uncertain/disputed. Missing or conflicting starter evidence blocks V1c evaluation. The exact designation used is preserved for retrospective starter-accuracy auditing.
 
 ### Sportsbook coverage
 
