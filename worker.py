@@ -19,6 +19,7 @@ from urllib.request import Request, urlopen
 from urllib.parse import urlencode
 from urllib.error import HTTPError
 from zoneinfo import ZoneInfo
+import feature_engine
 
 BOOKS = ('fanduel', 'draftkings', 'bet365', 'proline_ca_on')
 UTC = timezone.utc
@@ -119,16 +120,20 @@ class Collector:
         return {'games':len(games),'status':'FETCHED'}
 
     def refresh_teams(self, season):
-        # Published MoneyPuck bulk file; the old per-team /teams/ path was invalid.
+        # Published MoneyPuck bulk file. Stream once: preserve the current-season
+        # evidence while also feeding all 2015+ history to the exact recovered
+        # expanding-state feature builder.
         url='https://moneypuck.com/moneypuck/playerData/careers/gameByGame/all_teams.csv'
         requested=now(); results={}
         try:
             with urlopen(Request(url,headers={'User-Agent':'EVResearchCollector/1.0'}),timeout=60) as response:
                 reader=csv.DictReader(io.TextIOWrapper(response,encoding='utf-8-sig'))
                 output=io.StringIO(); writer=csv.DictWriter(output,fieldnames=reader.fieldnames);writer.writeheader()
+                history=io.StringIO(); hist_writer=csv.DictWriter(history,fieldnames=reader.fieldnames);hist_writer.writeheader()
                 count=0;seen=set();latest=None;seasons=set()
                 for row in reader:
                     s=int(row['season']);seasons.add(s)
+                    if s>=2015 and str(row.get('playoffGame'))=='0': hist_writer.writerow(row)
                     if s!=season or str(row.get('playoffGame'))!='0':continue
                     writer.writerow(row);count+=1;seen.add(row['team'])
                     date=row.get('gameDate',row.get('date'))
@@ -139,7 +144,17 @@ class Collector:
                   'sha256':hashlib.sha256(body).hexdigest(),'filtered_to_regular_season':season,
                   'rows':count,'latest_game_date':latest,'source_bytes_preserved':False}
             archive(self.root,f'teams/{season}/current_teams',body,meta)
-            results={'status':'FETCHED_UNVALIDATED','rows':count,'teams':sorted(seen),'latest_game_date':latest}
+            history_body=history.getvalue().encode()
+            feature_rows=feature_engine.from_csv_bytes(history_body,self.games)
+            feature_path=self.root/'features'/f'nhl_v1c_live_features_{season}_{season+1}.csv'
+            feature_engine.write_csv(feature_path,feature_rows)
+            ready=sum(bool(x['ready_for_v1c']) for x in feature_rows)
+            feature_meta={'generated_at':stamp(now()),'games':len(feature_rows),'ready':ready,
+                'blocked':len(feature_rows)-ready,'source_sha256':hashlib.sha256(history_body).hexdigest(),
+                'method':'V1c recovered expanding arithmetic means since 2015-16; strictly pregame'}
+            write_json(self.root/'features'/'latest.json',feature_meta)
+            results={'status':'FETCHED_FEATURES_BUILT','rows':count,'teams':sorted(seen),
+                'latest_game_date':latest,'feature_games':len(feature_rows),'feature_ready':ready}
         except HTTPError as e:results={'status':'BLOCKED','error':f'HTTP_{e.code}'}
         except Exception as e:results={'status':'BLOCKED','error':str(e)}
         write_json(self.root/'team_refresh.json',results)
