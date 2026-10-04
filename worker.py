@@ -224,13 +224,46 @@ class Collector:
                 stake=int(self.state.get('progression_stake',1))
                 decision=model_engine.evaluate(row,best['home'],best['away'],stake)
                 for c in decision['candidates']: c['bookmaker']=best_book[c['side']]
+                qualifying=[c for c in decision['candidates'] if c['qualifies']]
+                selected=max(qualifying,key=lambda c:c['ev']) if qualifying else None
+                arb=False
+                if best['home'] is not None and best['away'] is not None:
+                    arb=(1/model_engine.decimal_odds(best['home'])+1/model_engine.decimal_odds(best['away']))<1
                 result.update({'status':'EVALUATED','stake':stake,'decision':decision,
+                    'selected_bet':selected,'cross_book_arbitrage_detected':arb,
                     'manual_price_required_for':['bet365']})
             elif row:
                 result['feature_blockers']=row.get('blockers')
             else: result['feature_blockers']='FEATURE_ROW_MISSING'
             write_json(self.root/'evaluations'/(g['id']+'.json'),result)
         return meta
+
+
+    def settle_completed(self):
+        settled=self.state.setdefault('settled',{})
+        for g in self.games:
+            if g.get('state') not in ('FINAL','OFF'): continue
+            gid=str(g['id'])
+            if gid in settled: continue
+            ep=self.root/'evaluations'/(gid+'.json')
+            if not ep.exists(): continue
+            ev=json.loads(ep.read_text()); bet=ev.get('selected_bet')
+            if not bet:
+                settled[gid]={'status':'NO_QUALIFYING_BET'}; continue
+            try:
+                body,_=fetch(f'https://api-web.nhle.com/v1/gamecenter/{gid}/landing')
+                obj=json.loads(body); hs=obj.get('homeTeam',{}).get('score'); as_=obj.get('awayTeam',{}).get('score')
+                if hs is None or as_ is None or hs==as_: continue
+                winner='home' if hs>as_ else 'away'; stake=int(ev['stake'])
+                won=bet['side']==winner
+                profit=stake*(model_engine.decimal_odds(bet['american_odds'])-1) if won else -stake
+                next_stake=1 if won or stake==128 else stake*2
+                self.state['progression_stake']=next_stake
+                settled[gid]={'status':'SETTLED','side':bet['side'],'won':won,'stake':stake,'odds':bet['american_odds'],'profit':profit,'next_stake':next_stake}
+                print(json.dumps({'event':'settlement','game':gid,'result':settled[gid]}),flush=True)
+            except Exception as e:
+                print(json.dumps({'event':'settlement_error','game':gid,'type':type(e).__name__}),flush=True)
+        self.save()
 
     def tick(self):
         t=now(); due=[]
@@ -254,6 +287,7 @@ class Collector:
             for g in due: self.state['processed'][g['id']+'@'+g['start']]=status
             print(json.dumps({'event':'capture','games':[g['id'] for g in due],'status':status}),flush=True)
         self.save()
+        self.settle_completed()
 
     def run(self):
         print(json.dumps({'event':'worker_started','mode':'READ_ONLY_COLLECTION','books':BOOKS}),flush=True)
